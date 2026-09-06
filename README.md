@@ -80,3 +80,7 @@ The project includes sample complaint input files in the `data/` folder:
 ## Repository Status
 
 The project is intended to be committed and pushed to a GitHub repository after Git is available in the environment.
+
+## License
+
+This project is a capstone proof of concept created by Ashwini Kumar. It demonstrates the design of enterprise-grade, multimodal AI workflows using large language models. It is provided for demonstration and educational purposes only and is not intended for production use without further review, testing, security hardening, and compliance validation.
