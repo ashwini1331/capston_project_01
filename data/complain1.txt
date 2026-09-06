@@ -1,0 +1,10 @@
+Customer Name: Priya Sharma
+Email: priya.sharma@example.com
+Phone Number: 555-012-3456
+Complaint Category: Billing
+Issue Description: I was charged twice for my monthly subscription after cancellation.
+Resolution Provided: Refunded the duplicate charge and canceled the account.
+Complaint: Yes
+Escalation Required: No
+Supporting Document Available: Yes
+Overall Case Status: Resolved
