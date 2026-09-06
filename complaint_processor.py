@@ -8,7 +8,60 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List
 
+from pydantic import BaseModel, Field, field_validator
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
+
+
+class ComplaintRecord(BaseModel):
+    customer_name: str = Field(..., min_length=1)
+    email: str = Field(...)
+    phone_number: str = Field(default="")
+    complaint_category: str = Field(..., min_length=1)
+    issue_description: str = Field(..., min_length=1)
+    resolution_provided: str = Field(default="")
+    complaint: bool = Field(default=True)
+    escalation_required: bool = Field(default=False)
+    supporting_document_available: bool = Field(default=True)
+    overall_case_status: str = Field(default="Open")
+    source_file: str | None = None
+    customer_email: str | None = None
+    case_summary: str | None = None
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        if value and "@" not in value:
+            raise ValueError("Email must include an @ symbol.")
+        return value
+
+    @field_validator("phone_number")
+    @classmethod
+    def validate_phone(cls, value: str) -> str:
+        cleaned = re.sub(r"\s+", "", value or "")
+        return cleaned or ""
+
+    @field_validator("customer_name", "complaint_category", "issue_description")
+    @classmethod
+    def strip_values(cls, value: str) -> str:
+        return value.strip()
+
+
+def build_complaint_record(raw: Dict[str, Any], source_file: str | None = None) -> ComplaintRecord:
+    payload = {
+        "customer_name": raw.get("customer_name") or "Customer",
+        "email": raw.get("email") or "unknown@example.com",
+        "phone_number": raw.get("phone_number") or "",
+        "complaint_category": raw.get("complaint_category") or "General Complaint",
+        "issue_description": raw.get("issue_description") or raw.get("complaint") or "Issue not specified.",
+        "resolution_provided": raw.get("resolution_provided") or "Case is under review.",
+        "complaint": bool(raw.get("complaint", True)),
+        "escalation_required": bool(raw.get("escalation_required", False)),
+        "supporting_document_available": bool(raw.get("supporting_document_available", True)),
+        "overall_case_status": raw.get("overall_case_status") or "Open",
+        "source_file": source_file,
+    }
+    return ComplaintRecord(**payload)
 
 
 def get_gemini_api_key() -> str | None:
@@ -40,6 +93,50 @@ def normalize_yes_no(value: Any) -> bool:
 
 
 def find_field(text: str, labels: List[str]) -> str:
+    known_labels = [
+        "Customer Name",
+        "Customer",
+        "Client Name",
+        "Email",
+        "Email Address",
+        "Customer Email",
+        "Phone Number",
+        "Phone",
+        "Contact Number",
+        "Mobile",
+        "Complaint Category",
+        "Category",
+        "Issue Type",
+        "Product/Service",
+        "Issue Description",
+        "Problem Description",
+        "Complaint",
+        "Issue Details",
+        "Details",
+        "Resolution Provided",
+        "Resolution",
+        "Action Taken",
+        "Status Update",
+        "Complaint Status",
+        "Escalation Required",
+        "Escalation",
+        "Supporting Document Available",
+        "Supporting Document",
+        "Evidence",
+        "Overall Case Status",
+        "Case Status",
+        "Current Status",
+    ]
+    next_labels = "|".join(re.escape(label) for label in known_labels)
+
+    for label in labels:
+        pattern = rf"{re.escape(label)}\s*[:\-]\s*(.*?)(?=\n\s*(?:{next_labels})\s*[:\-]|$)"
+        match = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            value = match.group(1).strip()
+            if value:
+                return value
+
     for label in labels:
         pattern = rf"{re.escape(label)}\s*[:\-]\s*(.+)"
         match = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
@@ -54,7 +151,7 @@ def clean_value(value: str) -> str:
     if not value:
         return ""
     value = re.sub(r"\s+", " ", value).strip()
-    value = value.strip(" -;,.")
+    value = value.strip(" -;")
     return value
 
 
@@ -139,6 +236,26 @@ def generate_case_summary(record: Dict[str, Any]) -> str:
         "Recommended Next Action: Continue case monitoring and confirm the customer has received the resolution update."
     )
     return summary
+
+
+def process_document_workflow(file_path: Path, output_dir: Path) -> ComplaintRecord:
+    record = analyze_document(file_path)
+    record_model = build_complaint_record(record, source_file=file_path.name)
+    record_model.customer_email = generate_customer_email(record)
+    record_model.case_summary = generate_case_summary(record)
+
+    structured_dir = output_dir / "structured_data"
+    email_dir = output_dir / "customer_emails"
+    summary_dir = output_dir / "case_summaries"
+
+    structured_dir.mkdir(parents=True, exist_ok=True)
+    email_dir.mkdir(parents=True, exist_ok=True)
+    summary_dir.mkdir(parents=True, exist_ok=True)
+
+    save_json(structured_dir / f"{file_path.stem}.json", record_model.model_dump())
+    save_text(email_dir / f"{file_path.stem}.txt", record_model.customer_email or "")
+    save_text(summary_dir / f"{file_path.stem}.txt", record_model.case_summary or "")
+    return record_model
 
 
 def get_gemini_api_key() -> str | None:
@@ -273,6 +390,13 @@ def analyze_document(file_path: Path) -> Dict[str, Any]:
     return extracted
 
 
+def validate_record(record: Dict[str, Any], source_file: str | None = None) -> ComplaintRecord:
+    complaint_record = build_complaint_record(record, source_file=source_file)
+    complaint_record.customer_email = generate_customer_email(record)
+    complaint_record.case_summary = generate_case_summary(record)
+    return complaint_record
+
+
 def save_json(path: Path, data: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -304,11 +428,12 @@ def process_batch(data_folder: str = "./data", output_folder: str = "./output") 
         try:
             logging.info("Processing %s", file_path.name)
             record = analyze_document(file_path)
+            validated = validate_record(record, source_file=file_path.name)
+            results.append(validated.model_dump())
 
-            save_json(structured_dir / f"{file_path.stem}.json", record)
-            save_text(email_dir / f"{file_path.stem}.txt", record["customer_email"])
-            save_text(summary_dir / f"{file_path.stem}.txt", record["case_summary"])
-            results.append(record)
+            save_json(structured_dir / f"{file_path.stem}.json", validated.model_dump())
+            save_text(email_dir / f"{file_path.stem}.txt", validated.customer_email or "")
+            save_text(summary_dir / f"{file_path.stem}.txt", validated.case_summary or "")
         except Exception as exc:
             logging.error("Failed to process %s: %s", file_path.name, exc)
 

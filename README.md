@@ -13,6 +13,7 @@ This project automatically processes customer complaint documents in `.txt`, `.p
 - Supports text, PDF, and Word document input
 - Extracts structured details such as customer name, email, phone number, category, issue, resolution, status, and escalation flag
 - Uses Gemini when an API key is available
+- Uses a Pydantic-based complaint schema for structured validation
 - Falls back to local rule-based extraction when the API key is unavailable
 - Saves generated outputs in the `output/` folder
 
