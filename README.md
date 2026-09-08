@@ -12,7 +12,7 @@ This project automatically processes customer complaint documents in `.txt`, `.p
 - Reads complaint files from the `data/` folder
 - Supports text, PDF, and Word document input
 - Extracts structured details such as customer name, email, phone number, category, issue, resolution, status, and escalation flag
-- Uses Gemini when an API key is available
+- Uses Gemini 3.6 Flash when an API key is available
 - Uses a Pydantic-based complaint schema for structured validation
 - Falls back to local rule-based extraction when the API key is unavailable
 - Saves generated outputs in the `output/` folder
@@ -21,7 +21,8 @@ This project automatically processes customer complaint documents in `.txt`, `.p
 
 - `main.py` – entry point for running the full workflow
 - `complaint_processor.py` – complaint parsing, extraction, and output generation logic
-- `config.json` – optional Gemini API configuration
+- `config.json` – Gemini model configuration
+- `.env` – local Gemini API key (ignored by Git)
 - `data/` – input complaint files
 - `output/` – generated results
 - `tests/` – project tests
@@ -37,11 +38,13 @@ This project automatically processes customer complaint documents in `.txt`, `.p
    pip install -r requirements.txt
    ```
 
-4. Add your Gemini API key to environment variables or `config.json` if you want AI-based extraction:
+4. Add your Gemini API key to `.env` if you want AI-based extraction:
 
-   ```bash
-   set GEMINI_API_KEY=your_key_here
+   ```text
+   GEMINI_API_KEY=your_actual_gemini_api_key
    ```
+
+   Do not commit `.env` or share the API key. If no key is configured, the system uses local rule-based extraction.
 
 ## Run the Project
 
@@ -53,6 +56,12 @@ Optional custom input/output folders:
 
 ```bash
 python main.py --data-dir ./data --output-dir ./output
+```
+
+Run the tests:
+
+```bash
+python -m pytest tests/test_processor.py -q
 ```
 
 ## Output Files
@@ -76,10 +85,6 @@ The project includes sample complaint input files in the `data/` folder:
 
 - If no Gemini API key is configured, the system still works using local extraction logic.
 - This project is designed for complaint intake workflows and case processing automation.
-
-## Repository Status
-
-The project is intended to be committed and pushed to a GitHub repository after Git is available in the environment.
 
 ## License
 

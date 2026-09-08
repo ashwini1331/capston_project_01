@@ -64,25 +64,6 @@ def build_complaint_record(raw: Dict[str, Any], source_file: str | None = None) 
     return ComplaintRecord(**payload)
 
 
-def get_gemini_api_key() -> str | None:
-    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if api_key:
-        return api_key
-
-    config_path = Path(__file__).resolve().parent / "config.json"
-    if config_path.exists():
-        try:
-            with config_path.open("r", encoding="utf-8") as f:
-                config = json.load(f)
-            key = config.get("GEMINI_API_KEY") or config.get("GOOGLE_API_KEY")
-            if key:
-                return str(key)
-        except Exception:
-            pass
-
-    return None
-
-
 def normalize_yes_no(value: Any) -> bool:
     if value is None:
         return False
@@ -259,18 +240,46 @@ def process_document_workflow(file_path: Path, output_dir: Path) -> ComplaintRec
 
 
 def get_gemini_api_key() -> str | None:
+    env_path = Path(__file__).resolve().parent / ".env"
+    try:
+        from dotenv import load_dotenv
+
+        env_text = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+        if any("=" in line for line in env_text.splitlines()):
+            load_dotenv(env_path)
+    except ImportError:
+        pass
+
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if api_key:
-        return api_key
+        return api_key.strip()
+
+    # Accept a single raw key for compatibility with the existing .env file.
+    if env_path.exists():
+        try:
+            env_lines = [line.strip() for line in env_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            if len(env_lines) == 1 and "=" not in env_lines[0] and not env_lines[0].startswith("#"):
+                raw_key = env_lines[0].strip("\"'").strip()
+                if ":" in raw_key:
+                    raw_key = raw_key.split(":", 1)[1].strip().strip("\"'").strip()
+                return raw_key
+        except OSError:
+            pass
 
     config_path = Path(__file__).resolve().parent / "config.json"
     if config_path.exists():
         try:
             with config_path.open("r", encoding="utf-8") as f:
                 config = json.load(f)
-            key = config.get("GEMINI_API_KEY") or config.get("GOOGLE_API_KEY")
+            gemini_config = config.get("gemini", {})
+            key = (
+                config.get("GEMINI_API_KEY")
+                or config.get("GOOGLE_API_KEY")
+                or gemini_config.get("api_key")
+                or gemini_config.get("GEMINI_API_KEY")
+            )
             if key:
-                return str(key)
+                return str(key).strip()
         except Exception:
             pass
 
@@ -351,7 +360,14 @@ def call_gemini_for_extraction(document_text: str) -> Dict[str, Any] | None:
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model_name = "gemini-3.6-flash"
+        config_path = Path(__file__).resolve().parent / "config.json"
+        if config_path.exists():
+            with config_path.open("r", encoding="utf-8") as f:
+                config = json.load(f)
+            model_name = config.get("gemini", {}).get("model") or model_name
+
+        model = genai.GenerativeModel(model_name)
         prompt = """Extract structured complaint data in valid JSON format with keys:
         customer_name, email, phone_number, complaint_category, issue_description,
         resolution_provided, complaint, escalation_required, supporting_document_available,

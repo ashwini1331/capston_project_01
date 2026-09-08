@@ -8,7 +8,7 @@
         "max_tokens": 200
     },
     "gemini": {
-        "model": "gemini-2.5-flash",
+        "model": "gemini-3.6-flash",
         "temprature": 0.6,
         "top_p": 0.8,
         "max_tokens": 300
